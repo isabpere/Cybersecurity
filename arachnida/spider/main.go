@@ -5,20 +5,56 @@ import (
 	"os"
 	"net/http"
 	"golang.org/x/net/html"
+	"strconv"
 )
-func isValidFlag(s string) bool{
-	switch s {
-	case "-r", "-p", "-l" "-rl", "-rp", "-rlp":
-		return true
+
+func parseDepth(val string) (int, error){
+	depth, err := strconv.Atoi(val)
+	if err != nil{
+		return 0, fmt.Errorf("depth must be a number, got %q", val)
 	}
-	return false
+	if depth <= 0{
+		return 0, fmt.Errorf("depth must be greater than 0, got %d", depth)
+	}
+	return depth, nil
+}
+
+func isValidFlag(args []string, int leng) bool {
+	for  i := 1; i < leng; i++{
+		switch args[i] {
+		case "-r":
+			if (args[i+1]  == "-l"){
+				depth, err := parseDepth(args[i+2])
+				if err != nil
+					return false
+				//len(os.Args) == 5 (else error)
+				//save depth
+			}
+			else if (args[i +1]  == "-p"){
+				//len(os.Args) == 5 (else error)
+				//save the path
+
+			}
+			else{
+				//len(os.Args) == 4 (else error)
+				//recursive default = 5
+			}
+		case "-p":
+			//len(os.Args) == 4 (else error)
+			//save the path
+
+		case "-rlp":
+			//len(os.Args) == 5 (else error)
+			depth, err := parseDepth(args[i+2])
+				if err != nil
+					return false
+			//save depth
+			//save the path
+		}
+	}
 }
 
 func main() {
-	//Parse (the arguments: -rlp, URL)
-	// -rlp, -rlp [N], -rlp [PATH], -rlp [N] [PATH],
-	// -r, -rl, -rl [N]
-	// -p, -p [PATH]
 	if (len(os.Args) < 2){
 		fmt.Println("Usage: ./spider URL\nFlags: -rlp")
 		os.Exit(1)
@@ -36,11 +72,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		for i := 1; i < len(os.Args) -1; i++ {
-			if !isValidFlag(os.Args[i]){
-				fmt.Println("Flag's usage: -rlp\nNo repetitions")
-				os.Exit(1)
-			}
+		isValidFlag(os.Args, len(os.Args) -1)
 		}
-	}
 }
