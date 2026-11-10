@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -145,7 +148,15 @@ func crawl(cfg Config, client *http.Client) {
 	}
 	start, _ := url.Parse(cfg.URL)
 	visited := make(map[string]bool)
+	downloaded := make(map[string]bool)
 	current := []string{cfg.URL}
+	var allowedExt = map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".gif":  true,
+		".bmp":  true,
+	}
 	for d := 0; d <= depth && len(current) > 0; d++ {
 		var next []string
 		for _, pageURL := range current {
@@ -163,11 +174,27 @@ func crawl(cfg Config, client *http.Client) {
 			walk(doc, &images, &links)
 
 			base, _ := url.Parse(pageURL)
-
 			for _, img := range images {
-				//resolve with base.Parse (like links below),
-				//check the extension, download into cfg.Path
-				fmt.Println("image:", img) //test
+				u, err := base.Parse(img)
+				if err != nil {
+					continue
+				}
+				if u.Scheme != "http" && u.Scheme != "https" {
+					continue
+				}
+				ext := strings.ToLower(path.Ext(u.Path))
+				if !allowedExt[ext] {
+					continue
+				}
+				key := u.String()
+				if downloaded[key] {
+					continue
+				}
+				downloaded[key] = true
+				if err := downloadImage(client, u, cfg.Path); err != nil {
+					fmt.Fprintf(os.Stderr, "Error:  %v\n", err)
+					continue
+				}
 			}
 			for _, link := range links {
 				u, err := base.Parse(link)
@@ -185,6 +212,29 @@ func crawl(cfg Config, client *http.Client) {
 	}
 }
 
+func downloadImage(client *http.Client, u *url.URL, dir string) error {
+	resp, err := client.Get(u.String())
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf(" bad status %s", resp.Status)
+	}
+	name := path.Base(u.Path)
+	fullPath := filepath.Join(dir, name)
+	file, err := os.Create(fullPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := parseArgs(os.Args)
 	if err != nil {
@@ -193,9 +243,10 @@ func main() {
 		os.Exit(1)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
+	if err := os.MkdirAll(cfg.Path, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot create %s: %v\n", cfg.Path, err)
+		os.Exit(1)
+	}
 	crawl(cfg, client)
 
-	// fmt.Println("images:", images)
-	// fmt.Println("links:", links)
-	// fmt.Printf("%+v\n", cfg)
 }
