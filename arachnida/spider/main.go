@@ -103,19 +103,23 @@ func parseArgs(args []string) (Config, error) {
 	return cfg, nil
 }
 
-func fetchPage(client *http.Client, pageURL string) (*html.Node, error) {
+func fetchPage(client *http.Client, pageURL string) (*html.Node, *url.URL, error) {
 	resp, err := client.Get(pageURL)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: bad status %s", pageURL, resp.Status)
+		return nil, nil, fmt.Errorf("%s: bad status %s", pageURL, resp.Status)
 	}
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-		return nil, fmt.Errorf("%s: not an HTML page", pageURL)
+		return nil, nil, fmt.Errorf("%s: not an HTML page", pageURL)
 	}
-	return html.Parse(resp.Body)
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc, resp.Request.URL, nil
 }
 
 func walk(n *html.Node, images *[]string, links *[]string) {
@@ -143,8 +147,8 @@ func walk(n *html.Node, images *[]string, links *[]string) {
 
 func crawl(cfg Config, client *http.Client) {
 	depth := 0
-	if cfg.Recursive == false {
-		depth = 1
+	if cfg.Recursive == true {
+		depth = cfg.Depth
 	}
 	start, _ := url.Parse(cfg.URL)
 	visited := make(map[string]bool)
@@ -158,14 +162,16 @@ func crawl(cfg Config, client *http.Client) {
 		".bmp":  true,
 	}
 	for d := 0; d <= depth && len(current) > 0; d++ {
+		//fmt.Printf("level %d: %d pages to visit\n", d, len(current))
 		var next []string
+
 		for _, pageURL := range current {
 			if visited[pageURL] {
 				continue
 			}
 			visited[pageURL] = true
 
-			doc, err := fetchPage(client, pageURL)
+			doc, finalURL, err := fetchPage(client, pageURL)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				continue
@@ -173,7 +179,10 @@ func crawl(cfg Config, client *http.Client) {
 			var images, links []string
 			walk(doc, &images, &links)
 
-			base, _ := url.Parse(pageURL)
+			base := finalURL
+			if d == 0 {
+				start = finalURL
+			}
 			for _, img := range images {
 				u, err := base.Parse(img)
 				if err != nil {
